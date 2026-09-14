@@ -48,10 +48,10 @@ const PLATFORM_LIST = [
 
 interface SurveyFormProps {
   lang: Language;
-  onLangChange: (lang: Language) => void;
+  onLangChange?: (lang: Language) => void;
 }
 
-export default function SurveyForm({ lang, onLangChange }: SurveyFormProps) {
+export default function SurveyForm({ lang }: SurveyFormProps) {
   const t = TRANSLATIONS[lang];
   const regionsData = lang === "tg" ? TAJIKISTAN_REGIONS_TG : TAJIKISTAN_REGIONS_RU;
 
@@ -477,36 +477,10 @@ export default function SurveyForm({ lang, onLangChange }: SurveyFormProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-mono">
-            <CornerDownLeft className="w-3 h-3 text-slate-400" />
+        <div className="flex items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 text-xs font-mono font-medium border border-slate-200/80">
+            <CornerDownLeft className="w-3.5 h-3.5 text-slate-400" />
             Ctrl + Enter
-          </div>
-
-          <div className="inline-flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200/80">
-            <Globe className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
-            <button
-              type="button"
-              onClick={() => onLangChange("tg")}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                lang === "tg"
-                  ? "bg-emerald-700 text-white shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Тоҷикӣ
-            </button>
-            <button
-              type="button"
-              onClick={() => onLangChange("ru")}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
-                lang === "ru"
-                  ? "bg-emerald-700 text-white shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              Русский
-            </button>
           </div>
         </div>
       </div>
@@ -540,34 +514,16 @@ export default function SurveyForm({ lang, onLangChange }: SurveyFormProps) {
         </div>
       )}
 
-      {/* Official Header */}
+      {/* Survey Title & Mission */}
       <header className="mb-7 text-center">
-        <div className="flex justify-center items-center mb-4">
-          <div className="relative w-20 h-24 sm:w-24 sm:h-28 bg-white rounded-2xl p-2 shadow-sm border border-emerald-100 flex items-center justify-center">
-            <Image
-              src="/logo.png"
-              alt={t.enterprise}
-              width={96}
-              height={116}
-              priority
-              className="object-contain w-full h-full select-none"
-            />
-          </div>
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100/70 border border-emerald-200/80 text-emerald-800 text-xs font-bold mb-3 shadow-2xs">
+          <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+          <span>{t.badgeVks}</span>
         </div>
-
-        <div className="space-y-1.5 mb-4">
-          <p className="text-xs sm:text-sm font-bold uppercase text-emerald-800 tracking-normal">
-            {t.ministry}
-          </p>
-          <h2 className="text-xs sm:text-sm font-semibold text-slate-800 max-w-3xl mx-auto leading-snug">
-            {t.enterprise}
-          </h2>
-        </div>
-
         <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight max-w-2xl mx-auto">
           {t.surveyTitle}
         </h1>
-        <p className="text-xs sm:text-sm text-slate-500 max-w-2xl mx-auto mt-2 leading-relaxed">
+        <p className="text-xs sm:text-sm text-slate-600 max-w-2xl mx-auto mt-2 leading-relaxed">
           {t.surveySubtitle}
         </p>
       </header>

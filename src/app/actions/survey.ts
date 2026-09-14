@@ -35,7 +35,9 @@ export async function submitSurvey(data: SurveyFormData, lang: "tg" | "ru" = "tg
       needsTest: validated.data.needsTest ? (lang === "tg" ? "Ҳа, санҷиш лозим аст" : "Не") : (lang === "tg" ? "Да, требуется проверка" : "Нет"),
       hasMessengerBool: validated.data.hasMessenger,
       needsTestBool: validated.data.needsTest,
-      submittedAt: new Date().toISOString()
+      platformsText: Array.isArray(validated.data.platforms) ? validated.data.platforms.join(", ") : (validated.data.platforms || ""),
+      submittedAt: new Date().toISOString(),
+      submittedAtLocal: new Date().toLocaleString("ru-RU", { timeZone: "Asia/Dushanbe" })
     };
 
     const response = await fetch(scriptUrl, {
