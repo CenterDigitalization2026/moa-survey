@@ -4,14 +4,23 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:lan": "node scripts/show-ip.js && next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
     "start": "next start",
+    "start:lan": "node scripts/show-ip.js && next start -H 0.0.0.0 -p 3000",
+    "lan-info": "node scripts/show-ip.js",
     "lint": "eslint"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.45.0",
     "next": "16.3.5",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "react-hook-form": "^7.88.0",
+    "tailwind-merge": "^3.7.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
