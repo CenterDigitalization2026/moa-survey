@@ -8,6 +8,79 @@ export type SubmitResult = {
   message?: string;
 };
 
+export type CompletedDistrict = {
+  region: string;
+  district: string;
+  status: string;
+  isCompleted: boolean;
+};
+
+export async function getCompletedDistricts(): Promise<CompletedDistrict[]> {
+  try {
+    const scriptUrl = process.env.GOOGLE_SCRIPT_URL;
+    if (!scriptUrl) {
+      console.warn("GOOGLE_SCRIPT_URL is not configured in environment variables");
+      return [];
+    }
+
+    const response = await fetch(scriptUrl, {
+      method: "GET",
+      headers: {
+        Accept: "application/json"
+      },
+      cache: "no-store",
+      next: { revalidate: 0 },
+      redirect: "follow"
+    });
+
+    if (!response.ok) {
+      console.error(`Google Script GET failed: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const json = await response.json();
+    let rawItems: any[] = [];
+
+    if (Array.isArray(json)) {
+      rawItems = json;
+    } else if (Array.isArray(json?.data)) {
+      rawItems = json.data;
+    } else if (Array.isArray(json?.completedDistricts)) {
+      rawItems = json.completedDistricts;
+    } else if (Array.isArray(json?.items)) {
+      rawItems = json.items;
+    }
+
+    return rawItems
+      .map((item: any) => {
+        const region = String(item.region || item.Region || "").trim();
+        const district = String(item.district || item.District || "").trim();
+        const status = String(item.status || item.callStatus || item.Status || "").trim();
+
+        // Determine if survey is successfully completed
+        const isCompleted =
+          typeof item.isCompleted === "boolean"
+            ? item.isCompleted
+            : item.isCompleted === "true" ||
+              status === "Дозвонились (Успешно)" ||
+              status === "Тамос гирифта шуд (Бомуваффақият)" ||
+              status.toLowerCase() === "answered" ||
+              status.toLowerCase() === "completed";
+
+        return {
+          region,
+          district,
+          status,
+          isCompleted
+        };
+      })
+      .filter((item) => item.district.length > 0);
+  } catch (err: unknown) {
+    console.error("Error in getCompletedDistricts:", err);
+    return [];
+  }
+}
+
 export async function submitSurvey(data: SurveyFormData, lang: "tg" | "ru" = "tg"): Promise<SubmitResult> {
   try {
     const validated = SurveySchema.safeParse(data);

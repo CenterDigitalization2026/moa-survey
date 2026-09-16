@@ -30,11 +30,14 @@ import {
   CornerDownLeft,
   PhoneCall,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  Lock,
+  Unlock,
+  RefreshCw
 } from "lucide-react";
 import { TAJIKISTAN_REGIONS_TG, TAJIKISTAN_REGIONS_RU } from "@/lib/regions";
 import { SurveyFormData, SurveySchema } from "@/lib/survey-schema";
-import { submitSurvey } from "@/app/actions/survey";
+import { submitSurvey, getCompletedDistricts, CompletedDistrict } from "@/app/actions/survey";
 import { Language, TRANSLATIONS } from "@/lib/translations";
 import { generateDefaultOrganization } from "@/lib/auto-org";
 
@@ -62,6 +65,9 @@ export default function SurveyForm({ lang }: SurveyFormProps) {
   const [serverError, setServerError] = useState<string | null>(null);
   const [isOtherProvider, setIsOtherProvider] = useState<boolean>(false);
   const [customProvider, setCustomProvider] = useState<string>("");
+  const [completedDistricts, setCompletedDistricts] = useState<CompletedDistrict[]>([]);
+  const [isLoadingDistricts, setIsLoadingDistricts] = useState<boolean>(false);
+  const [allowForceEdit, setAllowForceEdit] = useState<boolean>(false);
 
   const {
     register,
@@ -122,6 +128,102 @@ export default function SurveyForm({ lang }: SurveyFormProps) {
     const today = new Date().toISOString().slice(0, 10);
     return `moa_calls_count_${today}`;
   };
+
+  // Fetch completed districts from Google Apps Script (revalidate = 0, always fresh)
+  const fetchDistricts = useCallback(async () => {
+    try {
+      setIsLoadingDistricts(true);
+      const data = await getCompletedDistricts();
+      if (Array.isArray(data) && data.length > 0) {
+        setCompletedDistricts(data);
+      }
+    } catch (err) {
+      console.error("Failed to load completed districts:", err);
+    } finally {
+      setIsLoadingDistricts(false);
+    }
+  }, []);
+
+  // Initial load on mount
+  useEffect(() => {
+    fetchDistricts();
+  }, [fetchDistricts]);
+
+  // Robust matching helper across TG/RU and naming variations
+  const getDistrictSurveyStatus = useCallback(
+    (distName: string, regName?: string): CompletedDistrict | undefined => {
+      if (!distName) return undefined;
+      const cleanDist = distName.trim().toLowerCase();
+
+      // 1. Direct match by district name
+      const direct = completedDistricts.find(
+        (item) => item.district.trim().toLowerCase() === cleanDist
+      );
+      if (direct) return direct;
+
+      // 2. Cross-language index match using TAJIKISTAN_REGIONS_TG / TAJIKISTAN_REGIONS_RU
+      if (regName) {
+        const fromData = lang === "tg" ? TAJIKISTAN_REGIONS_TG : TAJIKISTAN_REGIONS_RU;
+        const altData = lang === "tg" ? TAJIKISTAN_REGIONS_RU : TAJIKISTAN_REGIONS_TG;
+        const fromRegionKeys = Object.keys(fromData);
+        const altRegionKeys = Object.keys(altData);
+
+        const regIdx = fromRegionKeys.indexOf(regName);
+        if (regIdx !== -1) {
+          const altRegion = altRegionKeys[regIdx];
+          const distIdx = fromData[regName]?.indexOf(distName);
+          if (distIdx !== undefined && distIdx !== -1) {
+            const altDist = altData[altRegion]?.[distIdx];
+            if (altDist) {
+              const altMatch = completedDistricts.find(
+                (item) => item.district.trim().toLowerCase() === altDist.trim().toLowerCase()
+              );
+              if (altMatch) return altMatch;
+            }
+          }
+        }
+      }
+
+      // 3. Fallback: normalize prefix ("ноҳияи", "нохияи", "ш.", "г.", "район")
+      const normalize = (s: string) =>
+        s
+          .toLowerCase()
+          .replace(/^(ноҳияи|нохияи|нохия|ноҳия|ш\.|г\.|район)\s+/gi, "")
+          .replace(/\s+(ноҳия|нохия|район)$/gi, "")
+          .replace(/[^a-zа-яёҷӣӯҳқғ\w]/gi, "");
+
+      const normDist = normalize(distName);
+      if (normDist.length >= 3) {
+        const fuzzy = completedDistricts.find((item) => {
+          const normItem = normalize(item.district);
+          return normItem === normDist || (normItem.length >= 4 && (normItem.includes(normDist) || normDist.includes(normItem)));
+        });
+        if (fuzzy) return fuzzy;
+      }
+
+      return undefined;
+    },
+    [completedDistricts, lang]
+  );
+
+  // Statistics for selected region
+  const regionCompletedCount = availableDistricts.filter((d) => {
+    const status = getDistrictSurveyStatus(d, selectedRegion);
+    return status?.isCompleted;
+  }).length;
+  const regionTotalCount = availableDistricts.length;
+  const regionPercent = regionTotalCount > 0 ? Math.round((regionCompletedCount / regionTotalCount) * 100) : 0;
+
+  // Republic-wide statistics
+  const republicTotalCount = 65;
+  const allDistrictsList = Object.entries(regionsData).flatMap(([reg, dists]) =>
+    dists.map((d) => ({ reg, d }))
+  );
+  const republicCompletedCount = allDistrictsList.filter(({ reg, d }) => {
+    const status = getDistrictSurveyStatus(d, reg);
+    return status?.isCompleted;
+  }).length;
+  const republicPercent = Math.round((republicCompletedCount / republicTotalCount) * 100);
 
   // Synchronize options across languages when operator toggles lang (TG <-> RU)
   useEffect(() => {
@@ -393,6 +495,30 @@ export default function SurveyForm({ lang }: SurveyFormProps) {
           status: data.callStatus
         });
 
+        // Update local completedDistricts list immediately so submitted district locks instantly
+        const isCompletedCall =
+          data.callStatus === "Дозвонились (Успешно)" ||
+          data.callStatus === "Тамос гирифта шуд (Бомуваффақият)" ||
+          data.callStatus === "answered";
+
+        setCompletedDistricts((prev) => {
+          const clean = prev.filter(
+            (item) => item.district.trim().toLowerCase() !== data.district.trim().toLowerCase()
+          );
+          return [
+            ...clean,
+            {
+              region: data.region,
+              district: data.district,
+              status: data.callStatus,
+              isCompleted: isCompletedCall
+            }
+          ];
+        });
+
+        // Background sync to ensure fresh data
+        fetchDistricts();
+
         // Quick clean transition for operator flow
         setIsOtherProvider(false);
         setCustomProvider("");
@@ -655,6 +781,62 @@ export default function SurveyForm({ lang }: SurveyFormProps) {
             </div>
           </div>
 
+          {/* Progress Indicator Card */}
+          <div className="mb-5 p-4 rounded-xl bg-slate-50/90 border border-slate-200/90 shadow-2xs">
+            <div className="flex items-center justify-between gap-3 mb-2.5 flex-wrap">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 border border-emerald-200/80">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                </div>
+                <div>
+                  <div className="text-xs sm:text-sm font-bold text-slate-800">
+                    {selectedRegion ? (
+                      <>
+                        {t.progressCompleted}: <span className="text-emerald-700 font-extrabold">{regionCompletedCount}</span> {t.progressOf} {regionTotalCount} {t.progressDistricts}
+                      </>
+                    ) : (
+                      <>
+                        {t.progressAllRepublic}: <span className="text-emerald-700 font-extrabold">{republicCompletedCount}</span> {t.progressOf} {republicTotalCount} {t.progressDistricts}
+                      </>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {selectedRegion ? selectedRegion : t.progressSelectRegionHint}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {isLoadingDistricts && (
+                  <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                    <Loader2 className="w-3 h-3 animate-spin text-emerald-600" />
+                    <span className="hidden xs:inline">{t.loadingDistricts}</span>
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => fetchDistricts()}
+                  title={t.loadingDistricts}
+                  disabled={isLoadingDistricts}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDistricts ? "animate-spin" : ""}`} />
+                </button>
+                <div className="px-2.5 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 font-extrabold text-xs">
+                  {selectedRegion ? `${regionPercent}%` : `${republicPercent}%`}
+                </div>
+              </div>
+            </div>
+
+            {/* Progress bar line */}
+            <div className="w-full h-2.5 bg-slate-200/80 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full transition-all duration-500 ease-out"
+                style={{ width: `${selectedRegion ? regionPercent : republicPercent}%` }}
+              />
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Region Selection */}
             <div>
@@ -701,11 +883,42 @@ export default function SurveyForm({ lang }: SurveyFormProps) {
                 <option value="">
                   {selectedRegion ? t.districtPlaceholder : t.districtDisabledPlaceholder}
                 </option>
-                {availableDistricts.map((dist) => (
-                  <option key={dist} value={dist}>
-                    {dist}
-                  </option>
-                ))}
+                {availableDistricts.map((dist) => {
+                  const statusInfo = getDistrictSurveyStatus(dist, selectedRegion);
+                  const isCompleted = statusInfo?.isCompleted === true;
+                  const isRetry = !isCompleted && Boolean(statusInfo);
+
+                  if (isCompleted) {
+                    return (
+                      <option
+                        key={dist}
+                        value={dist}
+                        disabled={!allowForceEdit}
+                        className="text-gray-400 bg-gray-100"
+                      >
+                        ✅ {dist} ({t.statusCompletedOption})
+                      </option>
+                    );
+                  }
+
+                  if (isRetry) {
+                    return (
+                      <option
+                        key={dist}
+                        value={dist}
+                        className="text-amber-700 font-medium"
+                      >
+                        ⏳ {dist} ({t.statusRetryOption})
+                      </option>
+                    );
+                  }
+
+                  return (
+                    <option key={dist} value={dist}>
+                      {dist}
+                    </option>
+                  );
+                })}
               </select>
               {errors.district && (
                 <p className="text-xs text-rose-600 mt-1 flex items-center gap-1">
@@ -713,6 +926,28 @@ export default function SurveyForm({ lang }: SurveyFormProps) {
                   {errors.district.message}
                 </p>
               )}
+
+              {/* Force Edit Toggle */}
+              <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-600 hover:text-slate-900">
+                  <input
+                    type="checkbox"
+                    checked={allowForceEdit}
+                    onChange={(e) => setAllowForceEdit(e.target.checked)}
+                    className="w-3.5 h-3.5 text-amber-600 rounded border-slate-300 focus:ring-amber-500 cursor-pointer"
+                  />
+                  <span className="font-medium text-[11px] sm:text-xs">
+                    {t.allowForceEditLabel}
+                  </span>
+                </label>
+
+                {allowForceEdit && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                    <Unlock className="w-3 h-3 text-amber-600" />
+                    {t.allowForceEditActiveBadge}
+                  </span>
+                )}
+              </div>
             </div>
 
             {/* Organization Name (Auto-populated with manual edit allowed) */}
