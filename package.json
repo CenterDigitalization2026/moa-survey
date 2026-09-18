@@ -2,10 +2,14 @@
   "name": "moa-survey",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "dev:lan": "node scripts/show-ip.js && next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
+    "copy:standalone": "node scripts/copy-standalone.js",
+    "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron electron/main.js\"",
+    "build:electron": "next build && node scripts/copy-standalone.js && electron-builder",
     "start": "next start",
     "start:lan": "node scripts/show-ip.js && next start -H 0.0.0.0 -p 3000",
     "lan-info": "node scripts/show-ip.js",
@@ -27,9 +31,36 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^10.0.5",
+    "electron": "^44.4.2",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "get-port": "^7.2.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wait-on": "^9.1.0"
+  },
+  "build": {
+    "appId": "com.moa.survey",
+    "productName": "Опросник Минсельхоза",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "public/logo.png"
+    },
+    "files": [
+      "electron/**/*",
+      ".next/standalone/**/*",
+      ".next/static/**/*",
+      "public/**/*",
+      ".env.local"
+    ],
+    "asar": false
   }
 }
